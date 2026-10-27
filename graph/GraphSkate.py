@@ -15,18 +15,18 @@ self_link = [(i, i) for i in range(num_node)]
 inward_ori_index = [(1, 2), (2, 3), (3, 4), (1, 5), (5, 6), (6, 7), (1, 8),
                     (8, 9), (9, 10), (1, 11), (11, 12), (12, 13), (1, 0),
                     (0, 14), (14, 16), (0, 15), (15, 17)]
-neighbor_link = [(i - 1, j - 1) for (i, j) in inward_ori_index]
+neighbor_link = list(inward_ori_index)
 self_edge = self_link + neighbor_link
 
 
-inward = [(i - 1, j - 1) for (i, j) in inward_ori_index]
+inward = list(inward_ori_index)
 outward = [(j, i) for (i, j) in inward]
 neighbor = inward + outward
 
 inward_ori_index_B = [(1, 2), (2, 3), (3, 4), (1, 5), (5, 6), (6, 7), (1, 8),
                     (8, 9), (9, 10), (1, 11), (11, 12), (12, 13), (1, 0),
                     (0, 14), (14, 16), (0, 15), (15, 17)]
-inward_B = [(i - 1, j - 1) for (i, j) in inward_ori_index_B]
+inward_B = list(inward_ori_index_B)
 outward_B = [(j, i) for (i, j) in inward_B]
 neighbor_B = inward_B + outward_B
 
@@ -68,7 +68,7 @@ for root in range(A1.shape[1]):
 
 
 
-class GraphOlySkate:
+class GraphMITSkate:
     def __init__(self, labeling_mode='spatial'):
         self.A = self.get_adjacency_matrix(labeling_mode)
         self.B = self.get_adjacency_matrix_B(labeling_mode)
@@ -110,6 +110,7 @@ class GraphOlySkate:
 
 
 
+# Spatial and temporal hypergraph construction.
 class Hypergraph:
     def __init__(self):
         self.G_part = self.generate_G_part()
@@ -190,6 +191,9 @@ class Hypergraph:
         else:
             G = DV2 * H * W * invDE * HT * DV2
             return G
+
+GraphOlySkate = GraphMITSkate
+
 
 if __name__ == '__main__':
     HP = Hypergraph()

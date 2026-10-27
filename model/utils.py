@@ -19,7 +19,7 @@ def conv_branch_init(conv, branches):
     nn.init.constant_(conv.bias, 0)
 
 def conv_init(conv):
-    nn.init.kaiming_normal_(conv.weight, mode='fan_out')        #使用正态分布对输入张量进行赋值  fan_out 通过创建随机矩阵显示创建权重 fan_in 通过线性层(卷积或全连接)隐形创建
+    nn.init.kaiming_normal_(conv.weight, mode='fan_out')
     nn.init.constant_(conv.bias, 0)
 
 def fc_init(fc):
@@ -28,8 +28,8 @@ def fc_init(fc):
         nn.init.constant_(fc.bias, 0)
 
 def bn_init(bn, scale):
-    nn.init.constant_(bn.weight, scale)             #用scale填充bn.weight
-    nn.init.constant_(bn.bias, 0)                   #用0填充bn.bias
+    nn.init.constant_(bn.weight, scale)
+    nn.init.constant_(bn.bias, 0)
 
 
 class PositionalEncoding(nn.Module):
@@ -41,13 +41,13 @@ class PositionalEncoding(nn.Module):
 
         self.domain = domain
 
-        if domain == "temporal":                        #时间
+        if domain == "temporal":
             # temporal embedding
             pos_list = []
             for t in range(self.time_len):
                 for j_id in range(self.joint_num):
                     pos_list.append(t)
-        elif domain == "spatial":                       #空间
+        elif domain == "spatial":
             # spatial embedding
             pos_list = []
             for t in range(self.time_len):
@@ -59,10 +59,10 @@ class PositionalEncoding(nn.Module):
         # pe = pe.view(time_len, joint_num).unsqueeze(0).unsqueeze(0)
         # Compute the positional encodings once in log space.
 
-        #Positional Encoding 位置编码器
+
         pe = torch.zeros(self.time_len * self.joint_num, channel)
 
-        div_term = torch.exp(torch.arange(0, channel, 2).float() * -(math.log(10000.0) / channel))  # channel//2   arange(start,end,step)返回[(end-start)/step]的一维张量，以step为步长等间隔取值
+        div_term = torch.exp(torch.arange(0, channel, 2).float() * -(math.log(10000.0) / channel))
         pe[:, 0::2] = torch.sin(position * div_term)                                #PE(pos,2i)
         pe[:, 1::2] = torch.cos(position * div_term)                                #PE(pos,2i+1)
         pe = pe.view(time_len, joint_num, channel).permute(2, 0, 1).unsqueeze(0)    #(channel,time_len,joint_num)

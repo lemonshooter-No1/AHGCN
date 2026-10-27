@@ -53,3 +53,24 @@ Thumbs.db
 
 
 .ipynb_checkpoints
+
+.revision_backups/
+.response_template_work/
+.submission_package_work/
+experiment_records/
+experiment_scripts/
+/AGENTS.md
+/.agents/
+/.codex/
+/run_*gpu*.sh
+/.test_work/
+*.npz
+*.pem
+*.key
+.env
+.env.*
+/G_body.txt
+/G_part.txt
+/np_A.txt
+/feature.txt
+/feature250.txt

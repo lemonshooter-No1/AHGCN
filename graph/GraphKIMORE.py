@@ -138,6 +138,7 @@ class GraphKIMORE:
 
 
 
+# Spatial and temporal hypergraph construction.
 class Hypergraph:
     def __init__(self):
         self.G_part = self.generate_G_part()

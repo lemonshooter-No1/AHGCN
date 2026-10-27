@@ -1,3 +1,4 @@
+from pathlib import Path
 
 
 import torch
@@ -6,48 +7,49 @@ from sklearn.preprocessing import StandardScaler
 import pandas as pd
 import numpy as np
 
-Left_head_front = 0            #左前头
-Right_head_front = 1           #右前头
-Left_back_head = 2             #左后头
-Rright_back_head = 3           #右后头
-cervical_vertebra = 4          #颈椎椎骨
-thoracic_vertabra = 5          #胸椎
-Clavicle = 6                   #锁骨
-Sternum = 7                    #胸骨
-Right_back = 8                 #右后背
-Left_shoulder = 9              #左肩
-Left_upper_arm = 10            #左大臂
-Left_elbow = 11                #左肘
-Left_forearm = 12              #左小臂
+Left_head_front = 0
+Right_head_front = 1
+Left_back_head = 2
+Rright_back_head = 3
+cervical_vertebra = 4
+thoracic_vertabra = 5
+Clavicle = 6
+Sternum = 7
+Right_back = 8
+Left_shoulder = 9
+Left_upper_arm = 10
+Left_elbow = 11
+Left_forearm = 12
 Left_wrist_A = 13              #
 Left_wrist_B = 14
-Left_finger = 15               #左手指
-Right_shoulder = 16            #右肩
-Right_upper_arm=17             #右大臂
-Right_elbow=18                 #右肘
-Right_forearm=19               #右小臂
+Left_finger = 15
+Right_shoulder = 16
+Right_upper_arm=17
+Right_elbow=18
+Right_forearm=19
 Right_wrist_A=20               #
 Right_wrist_B=21
-Right_finger=22                #右手指
-Left_ASIS=23             #left anterior superior lliac 左前上韧带
+Right_finger=22
+Left_ASIS=23
 Right_ASIS=24
-Left_PSIS=25             #left posterior superior lliac 左后上韧带
+Left_PSIS=25
 Right_PSIS=26
-Left_thigh=27            #左大腿
-Left_knee=28             #左膝盖
-Left_tibia=29            #左胫骨
-Left_ankle=30            #左脚踝
-Left_heel=31             #左足跟
+Left_thigh=27
+Left_knee=28
+Left_tibia=29
+Left_ankle=30
+Left_heel=31
 Left_toe=32
-Right_thigh=33           #右大腿
+Right_thigh=33
 Right_knee=34
 Right_tibia=35
 Right_ankle=36
-Right_heel=37            #右足跟
+Right_heel=37
 Right_toe=38
 
 random.seed(42)
 
+# Load and preprocess UI-PRMD exercise sequences.
 class UI_Data_Loader():
     def __init__(self,dir):
         self.num_channel = 3
@@ -56,8 +58,8 @@ class UI_Data_Loader():
         self.num_timestep = 240
         self.batch_size = 90
         self.num_joints = 39
-        self.cor_x, self.cor_y,self.incor_x,self.incor_y = self.import_dataset()            #得到正确错误数据集的数据和标签
-        self.sc1 = StandardScaler()  # 将数据归一化和标准化的类，计算训练集的平均值和标准差，以便测试数据集使用相同的变换
+        self.cor_x, self.cor_y,self.incor_x,self.incor_y = self.import_dataset()
+        self.sc1 = StandardScaler()
         self.sc2 = StandardScaler()
         self.train_x, self.train_y, self.val_x,  self.val_y, self.test_x, self.test_y, self.all_data_x, self.all_data_y = self.preprocessing()
         pass
@@ -74,28 +76,20 @@ class UI_Data_Loader():
         return body_parts
 
     def import_dataset(self):
-        base_path = r"C:\Deep learning\STGCN-rehab-main"
-        #UI-PRMD
-        # cor_x = pd.read_csv("./" + self.dir + "/Data_Correct.csv", header=None).iloc[:, :].values        #./是所在目录里 ../是上一级目录 所以命令行运行和直接运行的目录不同
-        # cor_y = pd.read_csv("./" + self.dir + "/Labels_Correct.csv", header=None).iloc[:, :].values
-        #
-        # incor_x = pd.read_csv("./" + self.dir + "/Data_Incorrect.csv", header=None).iloc[:,:].values  # ./是所在目录里 ../是上一级目录 所以命令行运行和直接运行的目录不同
-        # incor_y = pd.read_csv("./" + self.dir + "/Labels_Incorrect.csv", header=None).iloc[:, :].values
-
-        cor_x = pd.read_csv(base_path + "/" + self.dir + "/Data_Correct.csv", header=None).iloc[:, :].values
-        cor_y = pd.read_csv(base_path + "/" + self.dir + "/Labels_Correct.csv", header=None).iloc[:, :].values
-
-        incor_x = pd.read_csv(base_path + "/" + self.dir + "/Data_Incorrect.csv", header=None).iloc[:, :].values
-        incor_y = pd.read_csv(base_path + "/" + self.dir + "/Labels_Incorrect.csv", header=None).iloc[:, :].values
-
+        dataset_path = Path(self.dir)
+        cor_x = pd.read_csv(dataset_path / 'Data_Correct.csv', header=None).values
+        cor_y = pd.read_csv(dataset_path / 'Labels_Correct.csv', header=None).values
+        incor_x = pd.read_csv(dataset_path / 'Data_Incorrect.csv', header=None).values
+        incor_y = pd.read_csv(dataset_path / 'Labels_Incorrect.csv', header=None).values
         return cor_x, cor_y, incor_x, incor_y
+
     def preprocessing(self):
-        #处理正确的数据集
+
         X_cor = np.zeros((self.batch_size, self.cor_x.shape[1], 117)).astype('float32')  # (90,240,117)
         for i in range(len(self.cor_x) // 117):
-            X_cor[i, :, :] = np.transpose(self.cor_x[117 * i:117 * (i + 1), :])  #把元数据进行转置 得到(90,240,117)
+            X_cor[i, :, :] = np.transpose(self.cor_x[117 * i:117 * (i + 1), :])
 
-        Xcor = X_cor.reshape(-1,117)                                             #变成(90*240,117)的矩阵,下面的for循环才能赋值
+        Xcor = X_cor.reshape(-1,117)
 
         y_cor = np.reshape(self.cor_y, (-1, 1))
 
@@ -110,12 +104,12 @@ class UI_Data_Loader():
 
         X_cor = torch.tensor(X_cor_,dtype=torch.double)
 
-        #处理错误的数据集
+
         X_incor = np.zeros((self.batch_size, self.incor_x.shape[1], 117)).astype('float32')  # (90,240,117)
         for i in range(len(self.cor_x) // 117):
-            X_incor[i, :, :] = np.transpose(self.incor_x[117 * i:117 * (i + 1), :])  # 把元数据进行转置 得到(90,240,117)
+            X_incor[i, :, :] = np.transpose(self.incor_x[117 * i:117 * (i + 1), :])
 
-        Xincor = X_incor.reshape(-1, 117)  # 变成(90*240,117)的矩阵,下面的for循环才能赋值
+        Xincor = X_incor.reshape(-1, 117)
 
         y_incor = np.reshape(self.incor_y, (-1, 1))
 
@@ -134,15 +128,15 @@ class UI_Data_Loader():
         trainidx1 = random.sample(range(0, X_cor.shape[0]), int(90 * 0.6))
         trainidx2 = random.sample(range(0, X_incor.shape[0]), int(90 * 0.6))
 
-        #中间一次的划分
+
         middle1 = np.setdiff1d(np.arange(0, 90, 1), trainidx1)
         middle2 = np.setdiff1d(np.arange(0, 90, 1), trainidx2)
 
-        #验证集
+
         val1 = random.sample(range(0, middle1.shape[0]), int(36 * 0.5))
         val2 = random.sample(range(0, middle2.shape[0]), int(36 * 0.5))
 
-        #测试集
+
         test1 = np.setdiff1d(np.arange(0, 36, 1), val1)
         test2 = np.setdiff1d(np.arange(0, 36, 1), val2)
 
@@ -155,20 +149,20 @@ class UI_Data_Loader():
         test_x = np.concatenate((X_cor[test1, :, :], X_incor[test2, :, :]))
         test_y = np.concatenate((np.squeeze(y_cor[test1]), np.squeeze(y_incor[test2])))
 
-        #扩展最后一维
+
         train_y = train_y[:,None]
         val_y = val_y[:,None]
         test_y = test_y[:,None]
 
-        # 新增：构建完整的数据集（所有正确和错误数据的合并）
+
         all_data_x = np.concatenate((X_cor[:, :, :], X_incor[:, :, :]))
         all_data_y = np.concatenate((np.squeeze(y_cor), np.squeeze(y_incor)))
-        all_data_y = all_data_y[:, None]  # 扩展维度为 (180, 1)
+        all_data_y = all_data_y[:, None]
 
         return train_x, train_y, val_x, val_y, test_x, test_y, all_data_x, all_data_y
 
 if __name__ == '__main__':
-    DL = UI_Data_Loader("UI_PRMD_ex4")    #这个类的作用是对UI_PRMD数据集处理,得到(90,240,39,3)的数据 表示90次重复动作,240帧,39个关节的三维坐标
+    DL = UI_Data_Loader("UI_PRMD_ex4")
     DL.preprocessing()
     #print("train_x",DL.train_x)
     print("train_y",DL.train_y)
@@ -178,7 +172,7 @@ if __name__ == '__main__':
     print("test_y",DL.test_y)
 
     print(f"\n完整数据集形状:")
-    print(f"all_data_x: {DL.all_data_x.shape}")  # 应该是 (180, 240, 39, 3)
+    print(f"all_data_x: {DL.all_data_x.shape}")
     print(f"all_data_y: {DL.all_data_y.shape}")
 
     print(f"\n各数据集形状汇总:")
@@ -188,10 +182,3 @@ if __name__ == '__main__':
     print(f"val_y: {DL.val_y.shape}")
     print(f"test_x: {DL.test_x.shape}")
     print(f"test_y: {DL.test_y.shape}")
-
-
-    #UI-PRMD数据集包含10530行，240列
-    # 每一列是一帧，一共240帧，每一列是所有关节点的三维坐标
-    #每117行是一个完整的动作，也就是240帧下39个关节点3维坐标
-    #一共是10530行，共90个动作
-    #UI-PRMD 数据集：包含 90 个三维人体动作，每个动作由 39 个关节点的 3D 坐标（共117维）在 240 帧下的运动序列构成，总数据规模为 10530 行 × 240 列。

@@ -9,7 +9,8 @@ import graph.GraphUIPRMD as GUI
 import graph.GraphKIMORE as GKI
 import graph.GraphSkate  as GSI
 from Processing.data_processing_UIPRMD import UI_Data_Loader
-from model.AdaptivescaleTimConv import  AdaptivescaleTimConv
+from model.AdaptivescaleTimConv import AdaptivescaleTimConv, TemporalHyperConv
+from graph.Hypergraph import Hypergraph, prepare_temporal
 from model.AdaptivescaleHyperConv import  AdaptivescaleHyperConv
 from model.utils import conv_init, bn_init
 from model.agc_layer import AGCLayer as InputEncoding, unit_tcn
@@ -24,59 +25,53 @@ import os
 
 
 
+# Spatial-temporal hypergraph block with optional frame pooling.
 class ASTHCBlock(nn.Module):
-    '''Selective Spatial Temporal Hypergraph Convolution Block.  图5b'''
-
-    def __init__(self, in_channels, out_channels, A, G_part, G_body, num_point, num_frame, stride=1, pool_channels=None,residual=True, tcn_dropout=0.2, device='cpu'):
+    def __init__(self, in_channels, out_channels, A, G_part, G_body, num_point, num_frame,
+                 stride=1, pool_channels=None, residual=True, tcn_dropout=0.0, device='cpu', topk_ratio=0.5):
         super(ASTHCBlock, self).__init__()
         self.stride = stride
-        self.gcn1 = AdaptivescaleHyperConv(in_channels, out_channels, A, G_part, G_body, num_point, num_frame, device=device)
-        self.tcn1 = unit_tcn(out_channels, out_channels, stride=1,dropout=tcn_dropout)
+        self.gcn1 = AdaptivescaleHyperConv(in_channels, out_channels, A, G_part, G_body,
+                                          num_point, num_frame, device=device)
+        self.tcn1 = TemporalHyperConv(out_channels, out_channels, dropout=tcn_dropout)
         self.relu = nn.ReLU()
+        self.residual_enabled = residual
         if self.stride == 2:
-            self.pool = AdaptivescaleTimConv(*pool_channels)
-        if not residual:
-            self.residual = lambda x: 0
+            self.pool = AdaptivescaleTimConv(out_channels, num_frame, ratio=topk_ratio, num_point=num_point)
 
-        elif (in_channels == out_channels) and (stride == 1):
-            self.residual = lambda x: x
-        else:
-            self.residual = unit_tcn(in_channels, out_channels, kernel_size=1, stride=1)
-
-
-
-    def forward(self, x,matrix_flag = False):
-        res = self.residual(x)
-        if matrix_flag:
-            x = self.gcn1(x,matrix_flag)
-        else:
-            x = self.gcn1(x)
-        x = self.tcn1(x)
-
-
-        N, C, T, V = x.size()
+    def forward(self, x, H, G_interjoint, matrix_flag=False, prepared=None):
+        spatial = self.gcn1(x, matrix_flag, G_interjoint)
+        temporal = self.tcn1(spatial, H, prepared)
+        residual = spatial if self.residual_enabled else torch.zeros_like(spatial)
         if self.stride == 2:
-            x, indices = self.pool(x, N)
-
-            T_new = (T+1)//2
-            pre_res = res.view(N, C, T, V)
-            res = torch.empty((N, C, T_new, V), device=x.device)
-            for i in range(N):
-                res[i] = pre_res[i,:,indices[i],:]
-            res = res.view(N, C, T_new, V)
+            temporal, indices = self.pool(spatial, features=temporal)
+            selected = indices[:, None, :, None].expand(-1, residual.size(1), -1, residual.size(3))
+            residual = residual.gather(2, selected)
+            H = Hypergraph.restrict(H, indices, spatial.size(3))
+        return self.relu(temporal + residual), H
 
 
-
-        x = x + res
-        return self.relu(x)
-
-
+# AHGCN backbone and sequence regression head.
 class Module(nn.Module):
     '''Selective-HCN Model.'''
 
-    def __init__(self, dataset_name='Kimore_ex2', in_channels=3,tcn_dropout=0.2, model_dropout=0.25, device='cpu'):
+    def __init__(self, dataset_name='Kimore_ex2', in_channels=3,tcn_dropout=0.0, model_dropout=0.25, device='cpu', num_center=5, sparse_lambda=0.01,
+                 sparse_threshold=0.001, sparse_iter=1000, sparse_tol=1e-6, temporal_k=4,
+                 topk_ratio=0.5, num_frame=None, gru_norm=1, init_variant='original', use_topk=False):
         super(Module, self).__init__()
         self.device = device
+        if gru_norm not in (1, 2):
+            raise ValueError('gru_norm must be 1 or 2.')
+        self.gru_norm = gru_norm
+        if init_variant not in ('original', 'spatial_open', 'temporal_identity', 'gru_memory', 'spatial_gru', 'all'):
+            raise ValueError('Unsupported init_variant.')
+        frame_override = num_frame
+        self.hypergraph_config = dict(num_center=num_center, sparse_lambda=sparse_lambda,
+                                     sparse_threshold=sparse_threshold, sparse_iter=sparse_iter,
+                                     sparse_tol=sparse_tol, temporal_k=temporal_k,
+                                     topk_ratio=topk_ratio, num_frame=num_frame, gru_norm=gru_norm, init_variant=init_variant, use_topk=use_topk)
+        self.structure = Hypergraph(num_center, sparse_lambda, sparse_threshold,
+                                    sparse_iter, sparse_tol, temporal_k)
 
         if 'UI_PRMD' in dataset_name:
             self.graph = GUI.GraphUIPRMD()
@@ -91,9 +86,15 @@ class Module(nn.Module):
         elif 'MIT_Skate' in dataset_name or 'MITSkate' in dataset_name:
             self.graph = GSI.GraphMITSkate()
             self.hypergraph = GSI.Hypergraph()
-            num_point = 25
+            num_point = 18
             num_frame = 4500
 
+        else:
+            raise ValueError(f'Unsupported dataset: {dataset_name}')
+        if frame_override is not None:
+            num_frame = frame_override
+        if num_frame < 2 or not 0 < topk_ratio <= 1:
+            raise ValueError('Invalid sequence length or frame retention ratio.')
         A = self.graph.A
         #bias_mat = self.graph.bias_mat
         G_part = self.hypergraph.G_part
@@ -106,20 +107,17 @@ class Module(nn.Module):
 
 
 
-        # #KIMORE数据集
-        self.l1 = InputEncoding(3, 64, A, residual=True, device=device)
-        self.l2 = ASTHCBlock(64, 64, A, G_part, G_body, num_point, num_frame,tcn_dropout=tcn_dropout, device=device)
-        self.l3 = ASTHCBlock(64, 64, A, G_part, G_body, num_point, num_frame,tcn_dropout=tcn_dropout, device=device)
-        self.l4 = ASTHCBlock(64, 64, A, G_part, G_body, num_point, num_frame,tcn_dropout=tcn_dropout, device=device)
-        #self.l5 = ASTHCBlock(64, 128, A, G_part, G_body, num_point, 100, stride=2, pool_channels=[128, 100])  # 选帧  这个函数调用后会进入SeleframeTemConv
-        self.l5 = ASTHCBlock(64, 128, A,  G_part, G_body, num_point, num_frame,tcn_dropout=tcn_dropout, device=device)
-        self.l6 = ASTHCBlock(128, 128, A, G_part, G_body, num_point, num_frame,tcn_dropout=tcn_dropout, device=device)
-        self.l7 = ASTHCBlock(128, 128, A,  G_part, G_body, num_point, num_frame,tcn_dropout=tcn_dropout, device=device)
-        #self.l8 = SelectSTHCBlock(128, 256, A, G_part, G_body, num_point, 50, stride=2, pool_channels=[256, 50])  # 选帧
-        self.l8 = ASTHCBlock(128, 256, A, G_part, G_body, num_point, num_frame,tcn_dropout=tcn_dropout, device=device)
-        self.l9 = ASTHCBlock(256, 256, A, G_part, G_body, num_point, num_frame,tcn_dropout=tcn_dropout, device=device)
-        self.l10 = ASTHCBlock(256, 256, A, G_part, G_body, num_point, num_frame,tcn_dropout=tcn_dropout, device=device)
-
+        self.l1 = InputEncoding(in_channels, 64, A, residual=True, device=device)
+        channels = [(64, 64), (64, 64), (64, 64), (64, 128), (128, 128),
+                    (128, 128), (128, 256), (256, 256), (256, 256)]
+        for block, (input_channels, output_channels) in enumerate(channels, 1):
+            stride = 2 if use_topk and block in (4, 7) else 1
+            layer = ASTHCBlock(input_channels, output_channels, A, G_part, G_body,
+                              num_point, num_frame, stride=stride, tcn_dropout=tcn_dropout,
+                              device=device, topk_ratio=topk_ratio)
+            setattr(self, f'l{block + 1}', layer)
+            if stride == 2:
+                num_frame = max(1, int(num_frame * topk_ratio))
 
         #TCN
         self.conv2d1 = nn.Conv2d(256, 16, (9, 1), padding=(4, 0))
@@ -128,13 +126,28 @@ class Module(nn.Module):
 
         #LSTM
         self.lstm = nn.LSTM(input_size=6400,hidden_size=256,num_layers=1,batch_first=True,bias=True).to(device)
-        self.gru = nn.GRU(input_size=6400,hidden_size=256,num_layers=1,batch_first=True,bias=True).to(device)
+        self.gru = nn.GRU(input_size=256 * num_point,hidden_size=256,num_layers=1,batch_first=True,bias=True).to(device)
         self.actv = nn.ReLU()
         self.fc2 = nn.Linear(48,256)
         self.fc3 = nn.Linear(128,128)
         self.fc = nn.Linear(256, 1)
 
         bn_init(self.data_bn, 1)
+        if init_variant in ('spatial_open', 'spatial_gru', 'all'):
+            for block in range(2, 11):
+                bn_init(getattr(self, f'l{block}').gcn1.bn, 1)
+        if init_variant in ('temporal_identity', 'all'):
+            for block in range(2, 11):
+                bn_init(getattr(self, f'l{block}').tcn1.bn, 0)
+        if init_variant in ('gru_memory', 'spatial_gru', 'all'):
+            for weight in self.gru.weight_ih_l0.chunk(3, dim=0):
+                nn.init.xavier_uniform_(weight)
+            for weight in self.gru.weight_hh_l0.chunk(3, dim=0):
+                nn.init.orthogonal_(weight)
+            nn.init.zeros_(self.gru.bias_ih_l0)
+            nn.init.zeros_(self.gru.bias_hh_l0)
+            with torch.no_grad():
+                self.gru.bias_ih_l0[self.gru.hidden_size:2 * self.gru.hidden_size].fill_(1)
 
 
     def Lstm(self, x):
@@ -154,41 +167,37 @@ class Module(nn.Module):
 
 
 
-    def forward(self, x, deteact_flag=False,matrix_flag = False):
-        """
-        Args:
-            x: 输入张量，形状为 (N, T, V, C)
-               N - 批次大小
-               T - 时间步数/帧数
-               V - 关节数量
-               C - 通道数/坐标维度
-            detect_flag: 是否输出特征可视化
-            matrix_flag: 是否使用矩阵标志
-        Returns:
-            output: 预测分数，形状为 (N, 1)
-        """
+    def forward(self, x, deteact_flag=False,matrix_flag = False, hypergraphs=None):
+
 
         x = torch.as_tensor(x).to(torch.float32)
         N, T, V, C = x.size()
-        x = x.permute(0, 3, 1, 2).contiguous().view(N,  V * C, T).to(self.device)
+        x_input = x.to(self.data_bn.weight.device)
+        x = x_input.permute(0, 2, 3, 1).contiguous().view(N, V * C, T)
         x = self.data_bn(x)
-        x = x.view(N, V, C, T).permute(0, 1, 3, 2).contiguous().view(N, C, T, V).to(self.device)
+        x = x.view(N, V, C, T).permute(0, 2, 3, 1).contiguous()
 
+        coordinates = x_input
+        if hypergraphs is None:
+            G_interjoint = self.structure.spatial(coordinates)
+            H = self.structure.temporal(coordinates)
+        else:
+            G_interjoint, H = hypergraphs
+            if G_interjoint.shape != (N, V, V) or len(H) != N:
+                raise ValueError('Cached hypergraphs do not match the input batch.')
+            if any(graph.shape != (T * V, T * V) for graph in H):
+                raise ValueError('Cached temporal hypergraphs do not match the input length.')
         x = self.l1(x)
-        x = self.l2(x)
-        x = self.l3(x)
-        x = self.l4(x)
-        x = self.l5(x)
-        x = self.l6(x)
-        x = self.l7(x)
-        x = self.l8(x)
-        x = self.l9(x)
-        x = self.l10(x)
-
+        prepared = prepare_temporal(H)
+        for block in range(2, 11):
+            layer = getattr(self, f'l{block}')
+            x, H = layer(x, H, G_interjoint, matrix_flag, prepared)
+            if layer.stride == 2:
+                prepared = prepare_temporal(H)
 
         x = x.permute(0,2,3,1)
         x = x.reshape(x.shape[0],x.shape[1], x.shape[2]*x.shape[3])
-        x = nn.functional.normalize(x, p=1, dim=2)
+        x = nn.functional.normalize(x, p=self.gru_norm, dim=2)
         x,h0 = self.gru(x)
         x = x.sum(1)
 

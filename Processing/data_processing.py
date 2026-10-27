@@ -1,4 +1,4 @@
-#处理的KIMORE数据集
+
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler
@@ -38,7 +38,7 @@ class Data_Loader():
     def __init__(self, dir):
         self.num_channel = 3
         self.dir = dir
-        self.body_part = self.body_parts()       
+        self.body_part = self.body_parts()
         self.dataset = []
         self.sequence_length = []
         self.num_timestep = 100
@@ -49,7 +49,7 @@ class Data_Loader():
         self.sc1 = StandardScaler()
         self.sc2 = StandardScaler()
         self.scaled_x, self.scaled_y = self.preprocessing()
-                
+
     def body_parts(self):
         body_parts = [index_Spine_Base, index_Spine_Mid, index_Neck, index_Head, index_Shoulder_Left,
                       index_Elbow_Left, index_Wrist_Left, index_Hand_Left, index_Shoulder_Right, index_Elbow_Right, index_Wrist_Right, index_Hand_Right, index_Hip_Left,
@@ -57,7 +57,7 @@ class Data_Loader():
                       index_Tip_Left, index_Thumb_Left, index_Tip_Right, index_Thumb_Right]
 
         return body_parts
-    
+
     def import_dataset(self):
         #Kimore
         # train_x = pd.read_csv("C:/Deep learning/STGCN-rehab-main/" + self.dir+"/Train_X.csv", header = None).iloc[:,:].values
@@ -67,7 +67,7 @@ class Data_Loader():
         train_y = pd.read_csv("./" + self.dir+"/Train_Y.csv", header = None).iloc[:,:].values
 
         return train_x, train_y
-            
+
     def preprocessing(self):
         X_train = np.zeros((self.train_x.shape[0],self.num_joints*self.num_channel)).astype('float32')
         for row in range(self.train_x.shape[0]):
@@ -75,21 +75,21 @@ class Data_Loader():
             for parts in self.body_part:
                 for i in range(self.num_channel):
                     X_train[row, counter+i] = self.train_x[row, parts+i]
-                counter += self.num_channel 
-        
+                counter += self.num_channel
+
         y_train = np.reshape(self.train_y,(-1,1))
         # X_train = self.sc1.fit_transform(X_train)
         # y_train = self.sc2.fit_transform(y_train)
-        
+
         X_train_ = np.zeros((self.batch_size, self.num_timestep, self.num_joints, self.num_channel))
-        
+
         for batch in range(X_train_.shape[0]):
             for timestep in range(X_train_.shape[1]):
                 for node in range(X_train_.shape[2]):
                     for channel in range(X_train_.shape[3]):
                         X_train_[batch,timestep,node,channel] = X_train[timestep+(batch*self.num_timestep),channel+(node*self.num_channel)]
-        
-                        
+
+
         X_train = X_train_
         return X_train, y_train
 

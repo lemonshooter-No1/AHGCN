@@ -14,7 +14,7 @@ class unit_tcn(nn.Module):
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=(kernel_size, 1), padding=(pad, 0),stride=(stride, 1))
 
         self.bn = nn.BatchNorm2d(out_channels)
-        self.drop = nn.Dropout(dropout, inplace=True)          #随机丢弃的概率
+        self.drop = nn.Dropout(dropout, inplace=True)
         self.relu = nn.ReLU()
         conv_init(self.conv)
         bn_init(self.bn, 1)
@@ -34,7 +34,7 @@ class unit_gcn(nn.Module):
         self.device = device
         inter_channels = out_channels // coff_embedding
         self.inter_c = inter_channels
-        self.PA = nn.Parameter(torch.from_numpy(A.astype(np.float32))).to(device)  # 将图的信息加入到训练参数
+        self.PA = nn.Parameter(torch.from_numpy(A.astype(np.float32))).to(device)
         nn.init.constant_(self.PA, 1e-6)
         self.A = Variable(torch.from_numpy(A.astype(np.float32)), requires_grad=False).to(device)
         self.num_subset = num_subset
@@ -99,7 +99,7 @@ class AGCLayer(nn.Module):
         self.tcn1 = unit_tcn(out_channels, out_channels, stride=stride)
         self.relu = nn.ReLU()
         if not residual:
-            self.residual = lambda x: 0  # 等于return false
+            self.residual = lambda x: 0
 
         elif (in_channels == out_channels) and (stride == 1):
             self.residual = lambda x: x
