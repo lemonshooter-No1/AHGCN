@@ -77,7 +77,6 @@ conda create -n ahgcn python=3.10 -y
 conda activate ahgcn
 python -m pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cu118
 python -m pip install -r requirements.txt
-python -c "import torch; print(torch.__version__); print(torch.cuda.is_available())"
 ```
 
 Run commands from the repository root. Dataset files are supplied separately and are not included in the repository.
